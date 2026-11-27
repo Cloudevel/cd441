@@ -10,7 +10,7 @@ El curso se imparte y se practica en *GitHub Codespaces* (el entorno de desarrol
 
 La configuración de ```.devcontainer/devcontainer.json``` deja listos *Python* 3.12, *Docker*, el *SDK* (*Software Development Kit*) de línea de comandos de *Google Cloud* (```gcloud```) y el *CLI* (*command-line interface*) de *GitHub* (```gh```). No hace falta instalar esas herramientas en un equipo propio ni usar una máquina virtual ajena al *Codespace*.
 
-El laboratorio de *Linux* por *SSH* (*Secure Shell*) del cuaderno 17 se resuelve **dentro** del *Codespace* (un contenedor con servidor *SSH* y un *runner* autoalojado). Los *runners* hospedados por *GitHub* no pueden alcanzar un *Codespace*.
+El laboratorio de *Linux* por *SSH* (*Secure Shell*) del cuaderno 17 es la **excepción**: el destino es un *Ubuntu* 24.04 completo de cada estudiante (con *systemd* y *PostgreSQL*), porque *GitHub Codespaces* no ofrece *systemd*. El *workflow* usa, por defecto, un *runner* autoalojado en esa misma máquina y solo en un repositorio privado; si el anfitrión es alcanzable desde internet, puede usarse un *runner* hospedado.
 
 ## Contenido
 
@@ -18,7 +18,7 @@ El laboratorio de *Linux* por *SSH* (*Secure Shell*) del cuaderno 17 se resuelve
 - Sintaxis *YAML* (*YAML Ain't Markup Language*) y elementos de un *workflow*
 - *Runners*, artefactos, entornos y seguridad
 - Integración continua de una *API* con *Flask* y pruebas automáticas
-- Imágenes de contenedor y publicación en un registro
+- Imágenes de contenedor y publicación en *GitHub Container Registry* (*GHCR*)
 - Despliegue a *GCP* en *Cloud Run*
 - Despliegue a un servidor *Linux* por *SSH*
 
@@ -85,8 +85,8 @@ Al terminar *cd441*, un curso posterior puede asumir:
 
 - *pipelines* básicos de *GitHub Actions* (*runners*, artefactos, entornos y secretos);
 - la construcción y publicación de una primera imagen de contenedor;
-- un primer despliegue **imperativo** de esa imagen a *Cloud Run*;
-- un primer despliegue a un servidor *Linux* por *SSH*.
+- un primer despliegue **imperativo** de esa imagen a *Cloud Run*, autenticado con *Workload Identity Federation* (*WIF*) y *OpenID Connect* (*OIDC*);
+- un primer despliegue a un *Ubuntu* 24.04 por *SSH*, con *systemd* y *PostgreSQL*.
 
 Queda **fuera del alcance** de *cd441* y se introduce en cursos posteriores:
 
@@ -94,6 +94,5 @@ Queda **fuera del alcance** de *cd441* y se introduce en cursos posteriores:
 - *Secret Manager*
 - *Compute Engine*
 - *Terraform* e infraestructura como código en la práctica
-- federación de identidad (por ejemplo, *Workload Identity Federation*)
 
-Este curso presenta *OpenID Connect* (*OIDC*) solo como panorama (cuaderno 13). El laboratorio de *Cloud Run* usa, por defecto, un patrón transitorio de enseñanza para autenticar el *workflow*; no sustituye a la federación de identidad en un entorno de producción.
+Este curso practica *Workload Identity Federation* (*WIF*, federación de identidad de cargas de trabajo) con *OpenID Connect* (*OIDC*) en el laboratorio de *Cloud Run* (cuadernos 13 y 16): el *workflow* no usa llaves de cuenta de servicio.
