@@ -20,6 +20,18 @@
 #   GCP_PROJECT_ID, GCP_REGION, AR_REPOSITORY, CLOUD_RUN_SERVICE,
 #   GCP_WIF_PROVIDER, GCP_DEPLOY_SA, GCP_RUNTIME_SA
 # No se necesita ningún secreto.
+#
+# Si no hay NINGUNA de esas variables, el despliegue se omite: el resumen avisa
+# cuáles faltan y cómo definirlas, y el workflow termina en éxito. Así el
+# repositorio del curso (o un fork sin proyecto de GCP) puede etiquetarse sin
+# fallar. Si falta solo una parte, el job sí falla: una configuración a medias
+# es un error, no una omisión. Si están todas, se valida el formato y se
+# despliega igual que antes.
+#
+# La comprobación está en este job, no en uno previo. Esas variables son del
+# entorno `cloudrun` y solo existen dentro del job que lo declara. Otro job con
+# el mismo entorno abriría un segundo despliegue y, si hay revisores
+# obligatorios, pediría una segunda aprobación.
 name: Despliegue en Cloud Run
 
 on:
@@ -53,27 +65,80 @@ jobs:
       GCP_RUNTIME_SA: ${{ vars.GCP_RUNTIME_SA }}
     steps:
       - name: Comprobar y validar variables
+        id: comprobar
         env:
           GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
           GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
         run: |
-          faltan=0
-          for nombre in GCP_PROJECT_ID GCP_REGION AR_REPOSITORY CLOUD_RUN_SERVICE \
-                        GCP_WIF_PROVIDER GCP_DEPLOY_SA GCP_RUNTIME_SA; do
+          # No se imprime ningún valor, solo nombres. Tres resultados:
+          # ninguna variable → omitir; algunas → error; todas → validar formato.
+          requeridas=(
+            GCP_PROJECT_ID GCP_REGION AR_REPOSITORY CLOUD_RUN_SERVICE
+            GCP_WIF_PROVIDER GCP_DEPLOY_SA GCP_RUNTIME_SA
+          )
+          faltan=()
+          for nombre in "${requeridas[@]}"; do
             if [ -z "${!nombre}" ]; then
-              echo "::error::Falta la variable ${nombre} en el entorno cloudrun."
-              faltan=1
+              faltan+=("${nombre}")
             fi
           done
-          [ "$faltan" -eq 0 ] || exit 1
+
+          if [ "${#faltan[@]}" -eq "${#requeridas[@]}" ]; then
+            echo "configurado=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Despliegue en Cloud Run omitido"
+              echo
+              echo "El entorno \`cloudrun\` no tiene ninguna variable de GCP."
+              echo "No se despliega y este workflow termina en éxito."
+              echo
+              echo "Variables ausentes:"
+              echo
+              for nombre in "${faltan[@]}"; do
+                echo "- \`${nombre}\`"
+              done
+              echo
+              echo "Para desplegar, defínelas todas en **Settings → Environments → cloudrun**."
+              echo "No son secretos y no hace falta ninguno: la autenticación es OIDC y Workload Identity Federation."
+              echo "El cuaderno 16 y los guiones \`api/deploy/gcp/preparar_proyecto.sh\` y \`configurar_wif.sh\` explican cada valor."
+              echo
+              echo "Si solo faltan algunas, este paso falla: una configuración incompleta no se omite."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Despliegue omitido::El entorno cloudrun no tiene variables de GCP (${faltan[*]}). Revisa el resumen de la ejecución."
+            exit 0
+          fi
+
+          if [ "${#faltan[@]}" -gt 0 ]; then
+            for nombre in "${faltan[@]}"; do
+              echo "::error::Falta la variable ${nombre} en el entorno cloudrun."
+            done
+            {
+              echo "### Configuración incompleta del entorno \`cloudrun\`"
+              echo
+              echo "Hay variables definidas y otras no. El despliegue se detiene: una configuración a medias es un error."
+              echo
+              echo "Variables ausentes:"
+              echo
+              for nombre in "${faltan[@]}"; do
+                echo "- \`${nombre}\`"
+              done
+              echo
+              echo "Complétalas en **Settings → Environments → cloudrun** (cuaderno 16)."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           # Validación de formato: estos valores acaban dentro de comandos.
           [[ "$GCP_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] \
             || { echo "::error::GCP_PROJECT_ID no válido"; exit 1; }
           [[ "$GCP_REGION" =~ ^[a-z]+-[a-z]+[0-9]+$ ]] || { echo "::error::GCP_REGION no válida"; exit 1; }
           [[ "$AR_REPOSITORY" =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo "::error::AR_REPOSITORY no válido"; exit 1; }
           [[ "$CLOUD_RUN_SERVICE" =~ ^[a-z][a-z0-9-]{0,48}$ ]] || { echo "::error::CLOUD_RUN_SERVICE no válido"; exit 1; }
+          echo "configurado=true" >> "$GITHUB_OUTPUT"
 
+      # Los pasos siguientes solo corren con configurado=true (entorno completo
+      # y formato válido). Si no hay variables, quedan en skipped.
       - name: Nombres de imagen
+        if: steps.comprobar.outputs.configurado == 'true'
         env:
           REPOSITORIO: ${{ github.repository }}
         run: |
@@ -83,6 +148,7 @@ jobs:
 
       # Único paso de autenticación: OIDC + Workload Identity Federation.
       - name: Autenticar en GCP (OIDC, sin llaves)
+        if: steps.comprobar.outputs.configurado == 'true'
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
@@ -90,9 +156,11 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SA }}
 
       - name: Configurar gcloud
+        if: steps.comprobar.outputs.configurado == 'true'
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Promocionar la imagen de GHCR a Artifact Registry
+        if: steps.comprobar.outputs.configurado == 'true'
         run: |
           gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
           if ! docker pull "${IMAGEN_GHCR}"; then
@@ -110,6 +178,7 @@ jobs:
 
       - name: Desplegar en Cloud Run
         id: desplegar
+        if: steps.comprobar.outputs.configurado == 'true'
         run: |
           # Sin --allow-unauthenticated: la cuenta de despliegue no puede cambiar
           # políticas IAM (privilegio mínimo). El acceso público se concede una vez,
@@ -129,6 +198,7 @@ jobs:
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
       - name: Comprobar /health y la versión desplegada
+        if: steps.comprobar.outputs.configurado == 'true'
         env:
           URL: ${{ steps.desplegar.outputs.url }}
         run: |
