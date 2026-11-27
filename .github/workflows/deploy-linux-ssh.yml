@@ -28,6 +28,19 @@
 #   Variables: SSH_DEPLOY_DIR, DEPLOY_RUNNER (opcional: self-hosted | ubuntu-latest)
 # Los secretos de la base de datos NO pasan por GitHub: viven en el anfitrión
 # (/etc/cd441/api.env).
+#
+# Si no hay ningún secreto ni `SSH_DEPLOY_DIR`, el despliegue se omite: el
+# resumen avisa qué falta y cómo configurarlo, y el workflow termina en éxito.
+# `SSH_PORT` es opcional (22 si no está). Si la configuración está a medias,
+# el job falla. Con todo lo obligatorio definido, la validación de formato y
+# el despliegue no cambian. `DEPLOY_RUNNER` no cuenta como credencial: solo
+# elige el runner.
+#
+# La comprobación está en este job por la misma razón que en Cloud Run: los
+# secretos del entorno `linux` no se ven desde otro job, y un segundo job con
+# este entorno repetiría el despliegue y la aprobación. La guarda de
+# repositorio público + runner autoalojado se evalúa antes y sigue siendo un
+# error. No se imprime ningún secreto: en el resumen solo aparecen nombres.
 name: Despliegue en Linux por SSH
 
 on:
@@ -65,19 +78,80 @@ jobs:
           persist-credentials: false
 
       - name: Comprobar y validar secretos y variables
+        id: comprobar
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           REPOSITORIO: ${{ github.repository }}
         run: |
-          faltan=0
-          for nombre in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SSH_DEPLOY_DIR; do
+          # No se imprime ningún valor, solo nombres. SSH_PORT es opcional.
+          # DEPLOY_RUNNER no entra aquí: no es una credencial.
+          requeridas=(SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SSH_DEPLOY_DIR)
+          # SSH_PORT es opcional (22 si falta). Si solo él está definido, es configuración a medias.
+          opcionales=(SSH_PORT)
+          faltan=()
+          hay_alguna=0
+          for nombre in "${requeridas[@]}"; do
             if [ -z "${!nombre}" ]; then
-              echo "::error::Falta ${nombre} en el entorno linux."
-              faltan=1
+              faltan+=("${nombre}")
+            else
+              hay_alguna=1
             fi
           done
-          [ "$faltan" -eq 0 ] || exit 1
+          for nombre in "${opcionales[@]}"; do
+            if [ -n "${!nombre}" ]; then
+              hay_alguna=1
+            fi
+          done
+
+          if [ "${#faltan[@]}" -eq "${#requeridas[@]}" ] && [ "$hay_alguna" -eq 0 ]; then
+            echo "configurado=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Despliegue en Linux por SSH omitido"
+              echo
+              echo "El entorno \`linux\` no tiene secretos ni la variable \`SSH_DEPLOY_DIR\`."
+              echo "No se despliega y este workflow termina en éxito."
+              echo
+              echo "Obligatorios ausentes:"
+              echo
+              for nombre in "${faltan[@]}"; do
+                echo "- \`${nombre}\`"
+              done
+              echo
+              echo "\`SSH_PORT\` es opcional: si no está, se usa el puerto 22."
+              echo
+              echo "Para desplegar, defínelos en **Settings → Environments → linux**."
+              echo "Secretos: \`SSH_HOST\`, \`SSH_USER\`, \`SSH_PRIVATE_KEY\`, \`SSH_KNOWN_HOSTS\` y, si aplica, \`SSH_PORT\`."
+              echo "Variable: \`SSH_DEPLOY_DIR\`. \`DEPLOY_RUNNER\` es opcional y solo elige el runner."
+              echo "El cuaderno 17 y \`api/deploy/preparar_anfitrion.sh\` explican la preparación del anfitrión."
+              echo "Los secretos de la base de datos no van en GitHub: viven en \`/etc/cd441/api.env\`."
+              echo
+              echo "Si solo faltan algunos, este paso falla: una configuración incompleta no se omite."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning title=Despliegue omitido::El entorno linux no tiene secretos ni SSH_DEPLOY_DIR (${faltan[*]}). Revisa el resumen de la ejecución."
+            exit 0
+          fi
+
+          if [ "${#faltan[@]}" -gt 0 ]; then
+            for nombre in "${faltan[@]}"; do
+              echo "::error::Falta ${nombre} en el entorno linux."
+            done
+            {
+              echo "### Configuración incompleta del entorno \`linux\`"
+              echo
+              echo "Hay algún secreto o variable definido y faltan otros obligatorios. El despliegue se detiene: una configuración a medias es un error."
+              echo
+              echo "Obligatorios ausentes:"
+              echo
+              for nombre in "${faltan[@]}"; do
+                echo "- \`${nombre}\`"
+              done
+              echo
+              echo "Complétalos en **Settings → Environments → linux** (cuaderno 17). No se muestra ningún valor."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
           # Estos valores se usan en comandos remotos: solo se aceptan formatos seguros.
           [[ "${SSH_PORT:-22}" =~ ^[0-9]{1,5}$ ]] || { echo "::error::SSH_PORT debe ser numérico"; exit 1; }
           [[ "$SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || { echo "::error::SSH_HOST no válido"; exit 1; }
@@ -85,8 +159,12 @@ jobs:
           [[ "$SSH_DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::SSH_DEPLOY_DIR debe ser una ruta absoluta simple"; exit 1; }
           [[ "$APP_VERSION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA no válido"; exit 1; }
           echo "API_IMAGE=ghcr.io/${REPOSITORIO,,}/api:${APP_VERSION}" >> "$GITHUB_ENV"
+          echo "configurado=true" >> "$GITHUB_OUTPUT"
 
+      # Los pasos que usan la clave solo corren con configurado=true.
+      # Borrar la clave sigue en always(): si el despliegue falla, hay que limpiar.
       - name: Preparar clave y known_hosts (en un directorio temporal)
+        if: steps.comprobar.outputs.configurado == 'true'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
@@ -104,6 +182,7 @@ jobs:
           echo "SSH_OPCIONES=${OPCIONES}" >> "$GITHUB_ENV"
 
       - name: Copiar el manifiesto de Compose al servidor
+        if: steps.comprobar.outputs.configurado == 'true'
         run: |
           # shellcheck disable=SC2086 # SSH_OPCIONES se separa en palabras a propósito
           ssh ${SSH_OPCIONES} -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" \
@@ -113,6 +192,7 @@ jobs:
             "${SSH_USER}@${SSH_HOST}:${SSH_DEPLOY_DIR}/api/deploy/compose.yaml"
 
       - name: Desplegar (idempotente) y comprobar /health
+        if: steps.comprobar.outputs.configurado == 'true'
         run: |
           # El script remoto va entre comillas: se ejecuta tal cual en el servidor,
           # con los valores ya validados como argumentos ($1, $2, $3).
