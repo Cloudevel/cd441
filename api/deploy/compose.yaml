@@ -1,0 +1,55 @@
+# Despliegue de la API en el anfitrión Linux (Ubuntu 24.04) del cuaderno 17.
+#
+# PostgreSQL NO va en un contenedor: corre en el propio anfitrión, instalado
+# con apt y gestionado con systemctl (ver api/deploy/preparar_anfitrion.sh).
+# La API se conecta por el SOCKET UNIX de PostgreSQL, que se monta en el
+# contenedor: la base no escucha en ninguna red y pg_hba.conf solo admite
+# conexiones locales.
+#
+# Uso en el anfitrión (lo hace .github/workflows/deploy-linux-ssh.yml, desde SSH_DEPLOY_DIR):
+#   docker compose -f api/deploy/compose.yaml --env-file .env pull
+#   docker compose -f api/deploy/compose.yaml --env-file .env up -d --wait
+# Repetirlo con el mismo .env no cambia nada: es idempotente.
+#
+# Uso en local o en Codespaces (sin PostgreSQL ni systemd: la API usa el almacén
+# en memoria porque no existe /etc/cd441/api.env):
+#   docker compose -f api/deploy/compose.yaml up -d --build --wait
+#
+# Variables (.env junto al despliegue, lo escribe el workflow; nunca en git):
+#   API_IMAGE      imagen inmutable por SHA: ghcr.io/<propietario>/<repo>/api:<sha>
+#   APP_VERSION    SHA desplegado (aparece en GET /health)
+#   APP_BIND       interfaz en la que se publica el puerto 8080 (por defecto 127.0.0.1)
+#   CD441_API_ENV  archivo con secretos de ejecución (por defecto /etc/cd441/api.env,
+#                  creado por preparar_anfitrion.sh con DATABASE_URL y SECRET_KEY;
+#                  solo legible por root y el usuario de despliegue)
+#   PG_SOCKET_DIR  directorio del socket de PostgreSQL (por defecto /var/run/postgresql)
+name: cd441
+
+services:
+  api:
+    image: ${API_IMAGE:-cd441-api:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      # Solo en la interfaz local por defecto: exponerla es una decisión explícita.
+      - "${APP_BIND:-127.0.0.1}:8080:8080"
+    environment:
+      PORT: "8080"
+      APP_VERSION: ${APP_VERSION:-dev}
+    # Los secretos de ejecución viven en el anfitrión, no en GitHub ni en la imagen.
+    env_file:
+      - path: ${CD441_API_ENV:-/etc/cd441/api.env}
+        required: false
+    volumes:
+      # Socket de PostgreSQL del anfitrión (solo lectura del directorio).
+      - type: bind
+        source: ${PG_SOCKET_DIR:-/var/run/postgresql}
+        target: /var/run/postgresql
+        read_only: true
+    # Endurecimiento: sistema de archivos de solo lectura y sin capacidades extra.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

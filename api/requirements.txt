@@ -1,0 +1,4 @@
+# Dependencias de ejecución, con versión fija (Dependabot propone actualizaciones).
+flask==3.1.3
+gunicorn==27.0.1
+psycopg[binary]==3.3.9

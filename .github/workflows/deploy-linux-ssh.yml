@@ -1,0 +1,136 @@
+# Despliegue en un anfitrión Linux por SSH (cuaderno 17).
+#
+# Destino: un Ubuntu 24.04 COMPLETO de cada estudiante (con systemd y PostgreSQL),
+# preparado con api/deploy/preparar_anfitrion.sh. No puede ser un Codespace:
+# allí no hay systemd.
+#
+# Runner: por defecto `self-hosted`, porque un Ubuntu propio (en casa, en el aula,
+# en una VM local) normalmente no es alcanzable desde los runners de GitHub.
+# Si el anfitrión tiene IP pública y SSH abierto, define la variable de entorno
+# DEPLOY_RUNNER=ubuntu-latest y no hace falta runner propio.
+#   ⚠️ Runner autoalojado = solo en un repositorio PRIVADO. En uno público,
+#   cualquiera puede abrir un pull request con un workflow que corra código en
+#   tu máquina. Este job se niega a correr en ese caso (primer paso).
+#
+# Buenas prácticas que muestra este archivo:
+#  - known_hosts FIJADO de antemano (secreto SSH_KNOWN_HOSTS) y
+#    StrictHostKeyChecking=yes: nada de `ssh-keyscan` dentro del pipeline.
+#  - Clave ed25519 dedicada, escrita en un directorio temporal y borrada al final
+#    (importante en un runner autoalojado, que no se destruye tras el job).
+#  - Validación estricta de entradas antes de usarlas en comandos remotos.
+#  - Script remoto entre comillas ('REMOTO'): nada se expande en el runner;
+#    los valores viajan como argumentos ya validados.
+#  - Imagen inmutable por SHA (la que publicó el CI en GHCR); despliegue idempotente
+#    con `docker compose up -d --wait` y evidencia final en GET /health.
+#
+# Entorno `linux` (Settings → Environments → linux):
+#   Secretos: SSH_HOST, SSH_USER, SSH_PORT, SSH_PRIVATE_KEY, SSH_KNOWN_HOSTS
+#   Variables: SSH_DEPLOY_DIR, DEPLOY_RUNNER (opcional: self-hosted | ubuntu-latest)
+# Los secretos de la base de datos NO pasan por GitHub: viven en el anfitrión
+# (/etc/cd441/api.env).
+name: Despliegue en Linux por SSH
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-linux-ssh
+  cancel-in-progress: false
+
+jobs:
+  desplegar:
+    runs-on: ${{ vars.DEPLOY_RUNNER || 'self-hosted' }}
+    timeout-minutes: 15
+    environment:
+      name: linux
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      SSH_DEPLOY_DIR: ${{ vars.SSH_DEPLOY_DIR }}
+      APP_VERSION: ${{ github.sha }}
+    steps:
+      - name: Negarse a usar un runner autoalojado en un repositorio público
+        if: runner.environment == 'self-hosted' && github.event.repository.private != true
+        run: |
+          echo "::error::Runner autoalojado + repositorio público = riesgo. Haz el repositorio privado o usa DEPLOY_RUNNER=ubuntu-latest."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Comprobar y validar secretos y variables
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          REPOSITORIO: ${{ github.repository }}
+        run: |
+          faltan=0
+          for nombre in SSH_HOST SSH_USER SSH_PRIVATE_KEY SSH_KNOWN_HOSTS SSH_DEPLOY_DIR; do
+            if [ -z "${!nombre}" ]; then
+              echo "::error::Falta ${nombre} en el entorno linux."
+              faltan=1
+            fi
+          done
+          [ "$faltan" -eq 0 ] || exit 1
+          # Estos valores se usan en comandos remotos: solo se aceptan formatos seguros.
+          [[ "${SSH_PORT:-22}" =~ ^[0-9]{1,5}$ ]] || { echo "::error::SSH_PORT debe ser numérico"; exit 1; }
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || { echo "::error::SSH_HOST no válido"; exit 1; }
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "::error::SSH_USER no válido"; exit 1; }
+          [[ "$SSH_DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "::error::SSH_DEPLOY_DIR debe ser una ruta absoluta simple"; exit 1; }
+          [[ "$APP_VERSION" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::SHA no válido"; exit 1; }
+          echo "API_IMAGE=ghcr.io/${REPOSITORIO,,}/api:${APP_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Preparar clave y known_hosts (en un directorio temporal)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          DIR_SSH="${RUNNER_TEMP}/ssh-cd441"
+          install -m 700 -d "${DIR_SSH}"
+          printf '%s\n' "${SSH_PRIVATE_KEY}" > "${DIR_SSH}/id_ed25519"
+          chmod 600 "${DIR_SSH}/id_ed25519"
+          printf '%s\n' "${SSH_KNOWN_HOSTS}" > "${DIR_SSH}/known_hosts"
+          # Opciones comunes de ssh/scp para los pasos siguientes:
+          # sin config del usuario, solo esta clave, y SOLO el known_hosts fijado.
+          OPCIONES="-F /dev/null -i ${DIR_SSH}/id_ed25519 -o IdentitiesOnly=yes"
+          OPCIONES+=" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${DIR_SSH}/known_hosts"
+          OPCIONES+=" -o BatchMode=yes -o ConnectTimeout=15"
+          echo "SSH_OPCIONES=${OPCIONES}" >> "$GITHUB_ENV"
+
+      - name: Copiar el manifiesto de Compose al servidor
+        run: |
+          # shellcheck disable=SC2086 # SSH_OPCIONES se separa en palabras a propósito
+          ssh ${SSH_OPCIONES} -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" \
+            mkdir -p "${SSH_DEPLOY_DIR}/api/deploy"
+          # shellcheck disable=SC2086
+          scp ${SSH_OPCIONES} -P "${SSH_PORT:-22}" api/deploy/compose.yaml \
+            "${SSH_USER}@${SSH_HOST}:${SSH_DEPLOY_DIR}/api/deploy/compose.yaml"
+
+      - name: Desplegar (idempotente) y comprobar /health
+        run: |
+          # El script remoto va entre comillas: se ejecuta tal cual en el servidor,
+          # con los valores ya validados como argumentos ($1, $2, $3).
+          # shellcheck disable=SC2086
+          ssh ${SSH_OPCIONES} -p "${SSH_PORT:-22}" "${SSH_USER}@${SSH_HOST}" \
+            bash -s -- "${SSH_DEPLOY_DIR}" "${API_IMAGE}" "${APP_VERSION}" <<'REMOTO'
+          set -euo pipefail
+          cd "$1"
+          printf 'API_IMAGE=%s\nAPP_VERSION=%s\n' "$2" "$3" > .env
+          docker compose -f api/deploy/compose.yaml --env-file .env pull --quiet
+          docker compose -f api/deploy/compose.yaml --env-file .env up -d --wait
+          docker compose -f api/deploy/compose.yaml --env-file .env ps
+          cuerpo="$(curl -fsS --retry 5 --retry-all-errors --retry-delay 2 http://127.0.0.1:8080/health)"
+          echo "${cuerpo}"
+          grep -q "\"version\":\"$3\"" <<< "${cuerpo}" || { echo "Versión inesperada" >&2; exit 1; }
+          grep -q '"status":"ok"' <<< "${cuerpo}"
+          REMOTO
+
+      - name: Borrar la clave del runner
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/ssh-cd441"

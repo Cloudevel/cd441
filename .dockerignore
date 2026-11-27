@@ -1,0 +1,32 @@
+# Lo que nunca entra al contexto de construcción de la imagen.
+# (El Dockerfile, además, solo copia api/app y api/wsgi.py.)
+.git
+.github
+.devcontainer
+**/.venv
+**/venv
+**/ENV
+**/env
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.tox
+**/.coverage
+**/coverage.xml
+**/htmlcov
+**/*.egg-info
+*.ipynb
+.ipynb_checkpoints
+img
+pdf
+# Secretos y configuración local: jamás dentro de una imagen.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/id_ed25519*
+api/tests
+api/deploy

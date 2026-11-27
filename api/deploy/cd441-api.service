@@ -1,0 +1,30 @@
+# Unidad systemd de la API de cd441 (cuaderno 17, Ubuntu 24.04).
+# La instala api/deploy/preparar_anfitrion.sh, que sustituye @DEPLOY_DIR@ y
+# @DEPLOY_USER@ (el mismo directorio que la variable SSH_DEPLOY_DIR del workflow).
+#
+# Para qué sirve: que la API arranque al iniciar el anfitrión, después de Docker
+# y de PostgreSQL, y poder operarla con systemctl:
+#   systemctl status cd441-api      journalctl -u cd441-api
+#   sudo systemctl restart cd441-api
+# El workflow deploy-linux-ssh.yml actualiza la API con docker compose; la
+# unidad usa exactamente el mismo comando, así que ambos caminos son equivalentes.
+
+[Unit]
+Description=API de demostración cd441 (Cloudevel)
+Requires=docker.service
+After=docker.service network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+# Hasta el primer despliegue no existe el .env con la imagen a usar.
+ConditionPathExists=@DEPLOY_DIR@/.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=@DEPLOY_USER@
+WorkingDirectory=@DEPLOY_DIR@
+ExecStart=/usr/bin/docker compose -f api/deploy/compose.yaml --env-file .env up -d --wait
+ExecStop=/usr/bin/docker compose -f api/deploy/compose.yaml --env-file .env down
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

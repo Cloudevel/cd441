@@ -1,0 +1,145 @@
+# Despliegue en Cloud Run (cuaderno 16).
+#
+# Flujo: autenticarse en GCP SIN llaves (OIDC + Workload Identity Federation) →
+# tomar la imagen ya publicada en GHCR para este commit → copiarla a Artifact
+# Registry con la misma etiqueta (SHA) → `gcloud run deploy` → comprobar /health.
+#
+# Buenas prácticas que muestra este archivo:
+#  - Sin llave JSON de cuenta de servicio: GitHub emite un token OIDC de corta
+#    duración y GCP lo canjea, solo si viene de ESTE repositorio y del entorno
+#    `cloudrun` (condición de atributos, ver api/deploy/gcp/configurar_wif.sh).
+#  - `id-token: write` solo en este job: permite pedir el token, no da acceso al repo.
+#  - Entorno protegido `cloudrun`: reglas de rama/etiqueta y, si se quiere,
+#    aprobación manual antes de desplegar.
+#  - Cuentas de servicio con privilegio mínimo: la que despliega no puede cambiar
+#    políticas IAM; el contenedor corre con otra cuenta, sin roles.
+#  - Se despliega la imagen probada en CI (misma etiqueta SHA): no se reconstruye.
+#  - `concurrency` sin cancelar: nunca dos despliegues a la vez, ni uno a medias.
+#
+# Variables del entorno `cloudrun` (Settings → Environments → cloudrun). No son secretos:
+#   GCP_PROJECT_ID, GCP_REGION, AR_REPOSITORY, CLOUD_RUN_SERVICE,
+#   GCP_WIF_PROVIDER, GCP_DEPLOY_SA, GCP_RUNTIME_SA
+# No se necesita ningún secreto.
+name: Despliegue en Cloud Run
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: cloudrun
+      url: ${{ steps.desplegar.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write # pedir el token OIDC a GitHub
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      AR_REPOSITORY: ${{ vars.AR_REPOSITORY }}
+      CLOUD_RUN_SERVICE: ${{ vars.CLOUD_RUN_SERVICE }}
+      GCP_RUNTIME_SA: ${{ vars.GCP_RUNTIME_SA }}
+    steps:
+      - name: Comprobar y validar variables
+        env:
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_DEPLOY_SA: ${{ vars.GCP_DEPLOY_SA }}
+        run: |
+          faltan=0
+          for nombre in GCP_PROJECT_ID GCP_REGION AR_REPOSITORY CLOUD_RUN_SERVICE \
+                        GCP_WIF_PROVIDER GCP_DEPLOY_SA GCP_RUNTIME_SA; do
+            if [ -z "${!nombre}" ]; then
+              echo "::error::Falta la variable ${nombre} en el entorno cloudrun."
+              faltan=1
+            fi
+          done
+          [ "$faltan" -eq 0 ] || exit 1
+          # Validación de formato: estos valores acaban dentro de comandos.
+          [[ "$GCP_PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]] \
+            || { echo "::error::GCP_PROJECT_ID no válido"; exit 1; }
+          [[ "$GCP_REGION" =~ ^[a-z]+-[a-z]+[0-9]+$ ]] || { echo "::error::GCP_REGION no válida"; exit 1; }
+          [[ "$AR_REPOSITORY" =~ ^[a-z][a-z0-9-]{0,62}$ ]] || { echo "::error::AR_REPOSITORY no válido"; exit 1; }
+          [[ "$CLOUD_RUN_SERVICE" =~ ^[a-z][a-z0-9-]{0,48}$ ]] || { echo "::error::CLOUD_RUN_SERVICE no válido"; exit 1; }
+
+      - name: Nombres de imagen
+        env:
+          REPOSITORIO: ${{ github.repository }}
+        run: |
+          echo "IMAGEN_GHCR=ghcr.io/${REPOSITORIO,,}/api:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          REGISTRO="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}"
+          echo "IMAGEN_AR=${REGISTRO}/${CLOUD_RUN_SERVICE}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      # Único paso de autenticación: OIDC + Workload Identity Federation.
+      - name: Autenticar en GCP (OIDC, sin llaves)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Configurar gcloud
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Promocionar la imagen de GHCR a Artifact Registry
+        run: |
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          if ! docker pull "${IMAGEN_GHCR}"; then
+            echo "::error::No existe ${IMAGEN_GHCR}. Espera a que el CI de main la publique (y que el paquete sea público)."
+            exit 1
+          fi
+          docker tag "${IMAGEN_GHCR}" "${IMAGEN_AR}"
+          docker push "${IMAGEN_AR}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            # Etiqueta de versión adicional; la de SHA sigue siendo la que se despliega.
+            ETIQUETA="${IMAGEN_AR%:*}:${GITHUB_REF_NAME}"
+            docker tag "${IMAGEN_GHCR}" "${ETIQUETA}"
+            docker push "${ETIQUETA}"
+          fi
+
+      - name: Desplegar en Cloud Run
+        id: desplegar
+        run: |
+          # Sin --allow-unauthenticated: la cuenta de despliegue no puede cambiar
+          # políticas IAM (privilegio mínimo). El acceso público se concede una vez,
+          # a mano, en el primer despliegue (api/deploy/gcp/desplegar_manual.sh).
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
+            --image "${IMAGEN_AR}" \
+            --service-account "${GCP_RUNTIME_SA}" \
+            --port 8080 \
+            --max-instances 1 \
+            --set-env-vars "APP_VERSION=${GITHUB_SHA}" \
+            --quiet
+          URL="$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --project "${GCP_PROJECT_ID}" --region "${GCP_REGION}" \
+            --format='value(status.url)')"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Comprobar /health y la versión desplegada
+        env:
+          URL: ${{ steps.desplegar.outputs.url }}
+        run: |
+          for intento in 1 2 3 4 5 6; do
+            if cuerpo="$(curl -fsS --max-time 10 "${URL}/health")"; then
+              echo "${cuerpo}"
+              grep -q "\"version\":\"${GITHUB_SHA}\"" <<< "${cuerpo}" \
+                || { echo "::error::La versión desplegada no es ${GITHUB_SHA}"; exit 1; }
+              exit 0
+            fi
+            echo "Intento ${intento}: aún no responde; reintento en 10 s"
+            sleep 10
+          done
+          echo "::error::${URL}/health no respondió"; exit 1

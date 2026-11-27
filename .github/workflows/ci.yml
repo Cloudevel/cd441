@@ -1,0 +1,118 @@
+# Integración continua de la API (cuaderno 14) y publicación de la imagen (cuaderno 15).
+#
+# Buenas prácticas que muestra este archivo:
+#  - Actions fijadas por SHA completo de commit (el comentario dice la versión).
+#    Una etiqueta como @v7 puede moverse; un SHA no. Dependabot propone las
+#    actualizaciones (.github/dependabot.yml).
+#  - `permissions:` mínimos: lectura por defecto; solo el job que publica pide
+#    `packages: write`, y solo se ejecuta en `main` (nunca en pull requests).
+#  - `concurrency`: un push nuevo cancela la ejecución anterior de la misma rama.
+#  - Etiqueta de imagen INMUTABLE: el SHA del commit, nunca `latest`.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # El token no se queda guardado en .git/config para pasos posteriores.
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements-dev.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Linter (ruff)
+        run: |
+          ruff check --output-format=github .
+          ruff format --check .
+
+      - name: Pruebas (pytest)
+        run: python -m pytest
+
+      - name: Publicar informe de cobertura
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cobertura-pytest
+          path: api/coverage.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Construir imagen (sin publicar)
+        working-directory: .
+        run: docker build -t cd441-api:ci .
+
+  publicar-imagen:
+    # Publica en GitHub Container Registry (GHCR) solo tras un CI verde en main.
+    # El paquete se deja PÚBLICO (Package settings → Change visibility): así el
+    # anfitrión Linux y Cloud Run (vía Artifact Registry) descargan sin credenciales.
+    # Esa misma imagen es la que se despliega en todos los destinos: se construye
+    # una vez y se promociona, sin reconstruir por entorno.
+    needs: verificar
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write # publicar en GHCR con el GITHUB_TOKEN temporal (sin PAT)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Nombre de la imagen en minúsculas
+        id: imagen
+        env:
+          REPOSITORIO: ${{ github.repository }}
+        run: echo "nombre=ghcr.io/${REPOSITORIO,,}/api" >> "$GITHUB_OUTPUT"
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Iniciar sesión en GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar (etiqueta = SHA del commit)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.imagen.outputs.nombre }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.vendor=Cloudevel
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
