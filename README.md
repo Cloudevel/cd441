@@ -4,6 +4,14 @@ Integración y entrega continua (*CI/CD*, *Continuous Integration / Continuous D
 
 Este repositorio contiene el material del curso de *Cloudevel* sobre integración y entrega continua con *GitHub Actions*. El recorrido construye, de forma progresiva, un *pipeline* de integración continua sobre una interfaz de programación de aplicaciones (*API*) y un primer despliegue, en modo imperativo, a *Cloud Run* en *Google Cloud Platform* (*GCP*) y a un servidor *Linux* por *SSH* (*Secure Shell*).
 
+## Entorno de trabajo
+
+El curso se imparte y se practica en *GitHub Codespaces* (el entorno de desarrollo en la nube de *GitHub*). En la página del repositorio, el menú *Code* permite crear un *Codespace* a partir de la rama de trabajo.
+
+La configuración de ```.devcontainer/devcontainer.json``` deja listos *Python* 3.12, *Docker*, el *SDK* (*Software Development Kit*) de línea de comandos de *Google Cloud* (```gcloud```) y el *CLI* (*command-line interface*) de *GitHub* (```gh```). No hace falta instalar esas herramientas en un equipo propio ni usar una máquina virtual ajena al *Codespace*.
+
+El laboratorio de *Linux* por *SSH* (*Secure Shell*) del cuaderno 17 se resuelve **dentro** del *Codespace* (un contenedor con servidor *SSH* y un *runner* autoalojado). Los *runners* hospedados por *GitHub* no pueden alcanzar un *Codespace*.
+
 ## Contenido
 
 - Introducción a *GitHub Actions* y conceptos de *DevOps* (cultura y prácticas de colaboración entre desarrollo y operación) y de *CI/CD*
@@ -25,7 +33,7 @@ Este repositorio contiene el material del curso de *Cloudevel* sobre integració
 - 07 — Actividad: expresiones
 - 08 — *DevOps*
 - 09 — *CI/CD*
-- 10 — *Runner* en entorno local
+- 10 — *Runner* autoalojado en el *Codespace*
 - 11 — Artefactos
 - 12 — Entornos
 - 13 — Seguridad
@@ -38,7 +46,8 @@ Este repositorio contiene el material del curso de *Cloudevel* sobre integració
 
 ```
 cd441/
-├── 01_*.ipynb … 17_*.ipynb   # Material del curso (en la raíz)
+├── .devcontainer/             # Entorno de GitHub Codespaces
+├── 01_*.ipynb … 17_*.ipynb    # Material del curso (en la raíz)
 ├── api/                       # Aplicación Flask de ejemplo
 ├── img/
 ├── Dockerfile                 # Imagen de la API
