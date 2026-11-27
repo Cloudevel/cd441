@@ -4,6 +4,8 @@ Integración y entrega continua (*CI/CD*, *Continuous Integration / Continuous D
 
 Este repositorio contiene el material del curso de *Cloudevel* sobre integración y entrega continua con *GitHub Actions*. El recorrido construye, de forma progresiva, un *pipeline* de integración continua sobre una interfaz de programación de aplicaciones (*API*) y un primer despliegue, en modo imperativo, a *Cloud Run* en *Google Cloud Platform* (*GCP*) y a un servidor *Linux* por *SSH* (*Secure Shell*).
 
+Curso de **20 horas**, en 17 cuadernos.
+
 ## Entorno de trabajo
 
 El curso se imparte y se practica en *GitHub Codespaces* (el entorno de desarrollo en la nube de *GitHub*). En la página del repositorio, el menú *Code* permite crear un *Codespace* a partir de la rama de trabajo.
