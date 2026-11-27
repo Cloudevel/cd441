@@ -9,7 +9,7 @@
 #  3. Solo se copia lo necesario para ejecutar (ni pruebas, ni .env, ni deploy/).
 #  4. El código pertenece a root y el proceso corre con un usuario sin privilegios:
 #     la aplicación no puede modificarse a sí misma.
-FROM python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+FROM python:3.15-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
