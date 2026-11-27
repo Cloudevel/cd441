@@ -1,6 +1,6 @@
 # Python 3.12 sobre Debian 12 (bookworm), imagen de devcontainer fijada por versión.
 # Dependabot (ecosistema docker) propone las actualizaciones.
-FROM mcr.microsoft.com/devcontainers/python:3.3.4-3.12-bookworm
+FROM mcr.microsoft.com/devcontainers/python:3.15-bookworm
 
 # SDK de Google Cloud (gcloud) desde el repositorio oficial de Google, con la
 # clave del repositorio en un keyring dedicado (signed-by) y la versión fijada.
