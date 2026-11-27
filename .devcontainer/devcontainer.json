@@ -7,6 +7,7 @@
     "ghcr.io/dhoeric/features/google-cloud-cli:1": {}
   },
   "forwardPorts": [8080, 2222],
+  "postCreateCommand": "python -m pip install --user --no-cache-dir ipykernel==7.4.0 bash_kernel==0.10.0 && python -m bash_kernel.install --user",
   "customizations": {
     "vscode": {
       "extensions": [
