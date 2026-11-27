@@ -102,10 +102,12 @@ Los ejecuta **una persona propietaria del proyecto**, desde un Codespace o desde
 
 ### 2.6 Codespaces (`.devcontainer/devcontainer.json`)
 
-- Imagen `mcr.microsoft.com/devcontainers/python:3.12`, fijada por **etiqueta, no por digest**.
-- *Features*: `docker-in-docker:4`, `github-cli:1` y `ghcr.io/dhoeric/features/google-cloud-cli:1`. Esta última es de terceros y no está fijada.
-- `forwardPorts [8080, 2222]`; el 2222 ya no se usa.
-- `postCreateCommand` instala `ipykernel==7.4.0` y `bash_kernel==0.10.0` con `--user` y registra el kernel Bash.
+- *Dockerfile* propio (`.devcontainer/Dockerfile`) sobre `mcr.microsoft.com/devcontainers/python:3.3.4-3.12-bookworm`, fijada por **versión, no por digest**.
+- `gcloud` se instala desde el repositorio oficial de Google con keyring `signed-by` y versión fija (`GCLOUD_VERSION`). Sustituye a la *feature* de terceros `dhoeric/features/google-cloud-cli`, sin mantenimiento desde 2023 y basada en `apt-key`.
+- *Features* fijadas: `docker-in-docker:4.1.3` y `github-cli:1.1.3`, con digest en `devcontainer-lock.json`.
+- `forwardPorts [8080]` (el 2222 se quitó).
+- Kernels y herramientas de ejecución fijados en `.devcontainer/requirements.txt` (`ipykernel`, `bash_kernel`, `nbformat`, `nbclient`, `pyyaml`), instalados en la imagen.
+- CI de cuadernos aparte (`notebooks.yml`): construye el devcontainer y ejecuta del 01 al 15; omite el 16 y el 17.
 - `remoteUser: vscode`.
 - Codespaces es el entorno principal. **Solo el destino del cuaderno 17** (systemd y PostgreSQL nativo) exige un Ubuntu 24.04 real.
 
@@ -319,23 +321,18 @@ Basado en `plan_prueba_en_vivo.md`. **Precios consultados el 27-nov-2026** en la
 
 ### 8.2 Lo que Dependabot **no** cubre
 
-- **Cuadernos:** quedan etiquetas mayores sin SHA en los ejemplos didácticos:
-  - `actions/checkout@v7` en los cuadernos 01, 02, 05 (cuatro veces) y 07;
-  - `actions/checkout@v7`, `actions/setup-python@v7` y `actions/upload-artifact@v7` en el cuaderno 11.
-  - El commit `55e41ee` **unificó checkout en v7**: ya no queda `@v4`.
-  - Al retomar: comprobar que v7 sigue siendo la versión mayor vigente, y decidir si se fijan por SHA o si se deja explícito por qué los fundamentos usan etiquetas (el cuaderno 13 enseña a fijar por SHA).
+- **Cuadernos:** los ejemplos de los cuadernos 01, 02, 05, 07 y 11 fijan las *actions* por SHA con la versión en un comentario, igual que los *workflows*. Dependabot no los actualiza: cuando cambie un SHA hay que actualizarlos a mano.
 - **Los bloques YAML de los cuadernos 14, 16 y 17 son copias literales** de los workflows. Cuando Dependabot cambie un SHA, **hay que actualizar también esos cuadernos**: un `diff` entre el bloque y el archivo debe dar 0 diferencias.
-- **`.devcontainer`:** la imagen `mcr.microsoft.com/devcontainers/python:3.12` va por etiqueta, sin digest. Las *features* van por versión mayor (`docker-in-docker:4`, `github-cli:1`), y la de terceros `dhoeric/features/google-cloud-cli:1` no está fijada. `forwardPorts` incluye el 2222, que ya no se usa.
-- Versiones fijas dentro de `postCreateCommand`: `ipykernel==7.4.0` y `bash_kernel==0.10.0`.
+- **`.devcontainer`:** Dependabot actualiza la imagen base (docker), las *features* (devcontainers) y `.devcontainer/requirements.txt` (pip), pero **no** `GCLOUD_VERSION` ni la versión del CLI de Dev Containers de `notebooks.yml`: se revisan a mano.
 - Las herramientas locales con las que se validó (sus versiones de entonces): gitleaks 8.30.1, ruff 0.17.6, pytest 9.2.0, actionlint 1.7.12.
 
 ### 8.3 Lista de comprobación al retomar (versiones)
 
 - [ ] Fusionar o revisar los PRs pendientes de Dependabot (acciones, pip y docker) con CI en verde.
 - [ ] Sincronizar los bloques YAML de los cuadernos 14, 16 y 17 con `.github/workflows/`.
-- [ ] Revisar las etiquetas `@v7` de los cuadernos 01, 02, 05, 07 y 11.
+- [ ] Sincronizar los SHA de los ejemplos de los cuadernos 01, 02, 05, 07 y 11 con los *workflows*.
 - [ ] Revisar la versión vigente de Python (3.12) frente al soporte y a la imagen `slim`.
-- [ ] Fijar o actualizar la imagen y las *features* del devcontainer, y quitar el puerto 2222.
+- [ ] Revisar `GCLOUD_VERSION` del devcontainer y la versión del CLI de Dev Containers de `notebooks.yml`.
 - [ ] Volver a ejecutar ruff, pytest, actionlint, yamllint, shellcheck, `docker build` y gitleaks.
 - [ ] Volver a consultar los precios de §4.7.
 
@@ -363,11 +360,9 @@ Basado en `plan_prueba_en_vivo.md`. **Precios consultados el 27-nov-2026** en la
   - cuaderno 23: `ssh.service`, `ssh.socket` y `sshd_config.d`;
   - cuaderno 27: `timedatectl` y cron;
   - cuaderno 28: `ufw` (permitir SSH antes de `enable`) y `sshd -t`, con una segunda sesión abierta.
-- **Recomendaciones pendientes:**
-  - en el cuaderno 20, celda 22, quitar la frase que aún menciona «la máquina virtual antigua del curso»;
-  - fijar la imagen base del Dockerfile del devcontainer por digest y fijar las versiones de `jupyter` y `bash_kernel`;
-  - en el cuaderno 21, celda 11, corregir la errata «utuilizaba»;
-  - volver a pasar la revisión de seguridad sobre `174eb7f`.
+- **Recomendaciones:**
+  - En la rama local `chore/devcontainer-2711` de cd101 (sin publicar) quedan resueltas: la frase del cuaderno 20, celda 22, sobre el servicio *Jupyter* antiguo; la imagen base fijada por versión (`base:3.0.14-noble`), `docker-in-docker:4.1.3` y los paquetes de pip fijados con `==`; las erratas del cuaderno 21 («utuilizaba» ya estaba corregida en `main`); y una CI que ejecuta los cuadernos compatibles con un contenedor.
+  - Sigue pendiente volver a pasar la revisión de seguridad sobre `174eb7f`.
 
 ---
 

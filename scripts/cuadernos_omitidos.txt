@@ -1,0 +1,3 @@
+# Cuadernos que la CI de cuadernos no ejecuta.
+16_despliegue_en_cloud_run.ipynb  # necesita un proyecto de Google Cloud, Workload Identity Federation y credenciales
+17_despliegue_en_linux_por_ssh.ipynb  # el destino es un Ubuntu 24.04 completo con systemd y PostgreSQL

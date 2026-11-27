@@ -1,5 +1,6 @@
 # Mantiene al día lo que está fijado por versión o por SHA/digest:
-# actions de los workflows, dependencias de Python e imagen base del Dockerfile.
+# actions de los workflows, dependencias de Python, imágenes base de los
+# Dockerfile (API y devcontainer) y features del devcontainer.
 # Dependabot abre pull requests; nada se actualiza sin revisión.
 version: 2
 updates:
@@ -12,6 +13,18 @@ updates:
     schedule:
       interval: monthly
   - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+  - package-ecosystem: pip
+    directory: /.devcontainer
+    schedule:
+      interval: monthly
+  - package-ecosystem: docker
+    directory: /.devcontainer
+    schedule:
+      interval: monthly
+  - package-ecosystem: devcontainers
     directory: /
     schedule:
       interval: monthly

@@ -10,7 +10,15 @@ Curso de **20 horas**, en 17 cuadernos.
 
 El curso se imparte y se practica en *GitHub Codespaces* (el entorno de desarrollo en la nube de *GitHub*). En la página del repositorio, el menú *Code* permite crear un *Codespace* a partir de la rama de trabajo.
 
-La configuración de ```.devcontainer/devcontainer.json``` deja listos *Python* 3.12, los *kernels* de *Jupyter* para *Python* y para *Bash* (con los que se ejecutan los cuadernos), *Docker*, el *SDK* (*Software Development Kit*) de línea de comandos de *Google Cloud* (```gcloud```) y el *CLI* (*command-line interface*) de *GitHub* (```gh```). No hace falta instalar esas herramientas en un equipo propio ni usar una máquina virtual ajena al *Codespace*.
+La configuración de ```.devcontainer/devcontainer.json``` deja listos *Python* 3.12, los *kernels* de *Jupyter* para *Python* y para *Bash* (con los que se ejecutan los cuadernos), *Docker*, el *SDK* (*Software Development Kit*) de línea de comandos de *Google Cloud* (```gcloud```) y el *CLI* (*command-line interface*) de *GitHub* (```gh```). No hace falta instalar esas herramientas en un equipo propio.
+
+La imagen base (`.devcontainer/Dockerfile`), las *features* (*Docker-in-Docker* y `gh`, con `devcontainer-lock.json`), la versión de `gcloud` y los paquetes de *Python* (`.devcontainer/requirements.txt`) están fijados por versión. *Docker-in-Docker* ejecuta un demonio de *Docker* dentro del *Codespace*, en modo privilegiado; lo usa el cuaderno 15 para construir y probar la imagen de la *API*.
+
+El *workflow* `.github/workflows/notebooks.yml` construye el mismo *devcontainer* en *GitHub Actions* y ejecuta los cuadernos con `scripts/ejecutar_cuadernos.py`. Omite el 16 (necesita un proyecto de *Google Cloud* y credenciales) y el 17 (necesita el *Ubuntu* 24.04 completo), como indica `scripts/cuadernos_omitidos.txt`. Es independiente del *workflow* de la *API* (`ci.yml`). Para ejecutar la misma comprobación dentro del *Codespace*:
+
+``` bash
+python scripts/ejecutar_cuadernos.py --omitir scripts/cuadernos_omitidos.txt
+```
 
 El laboratorio de *Linux* por *SSH* (*Secure Shell*) del cuaderno 17 es la **excepción**: el destino es un *Ubuntu* 24.04 completo de cada estudiante (con *systemd* y *PostgreSQL*), porque *GitHub Codespaces* no ofrece *systemd*. El *workflow* usa, por defecto, un *runner* autoalojado en esa misma máquina y solo en un repositorio privado; si el anfitrión es alcanzable desde internet, puede usarse un *runner* hospedado.
 
@@ -53,6 +61,7 @@ cd441/
 ├── api/                       # Aplicación Flask de ejemplo
 ├── img/
 ├── Dockerfile                 # Imagen de la API
+├── scripts/                   # Ejecución automática de los cuadernos
 └── .github/workflows/         # Workflows de CI y de despliegue
 ```
 
