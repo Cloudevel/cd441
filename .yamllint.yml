@@ -1,0 +1,14 @@
+# Reglas de yamllint para los YAML del repositorio (workflows, Compose).
+# Máximo de 160: los workflows actuales de main llegan a 158 caracteres;
+# el 120 de la rama original haría fallar `yamllint .github`.
+extends: default
+rules:
+  line-length:
+    max: 160
+  document-start: disable
+  truthy:
+    # `on:` es la clave estándar de GitHub Actions.
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
