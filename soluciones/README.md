@@ -8,7 +8,7 @@ Los cuadernos usan el *kernel* de *Python* del *devcontainer* del curso (*Python
 
 Hay tres tipos de celdas:
 
-| Tipo | Etiquetas | Qué necesita | Con `ejecutar_cuadernos.py` |
+| Tipo | Etiquetas | Qué necesita | En la CI |
 |---|---|---|---|
 | Comprobación local | ninguna | Python, `bash`; algunas necesitan acceso a PyPI | se ejecuta |
 | Práctica en la nube | `skip-execution` y `requiere-nube` | cuenta de GitHub con `gh`, o un proyecto de nube | se omite |
@@ -22,14 +22,16 @@ Para ejecutar solo las comprobaciones locales desde la raíz del repositorio:
 python scripts/ejecutar_cuadernos.py soluciones/*.ipynb
 ```
 
-`scripts/ejecutar_cuadernos.py` y el *workflow* `notebooks.yml` recorren solo los cuadernos de la raíz; esta carpeta no forma parte de la CI actual.
+## Integración continua
+
+La CI (rama `ci/soluciones-2711`, pendiente de publicar) ejecuta `soluciones/*.ipynb` en el *devcontainer*, además de los cuadernos de la raíz: **62 celdas de código se ejecutan y 42 se omiten** con `skip-execution`. La tabla «Qué no puede ejecutar la CI» de este archivo es la lista de esas 42 celdas; `docs/CI_CUADERNOS.md` solo remite a ella.
 
 ## Reglas de las soluciones
 
 * Ningún valor real: los identificadores de proyecto, las direcciones y los usuarios se leen de variables de entorno. Los ejemplos usan marcadores (`proyecto-ejemplo-123`, `ejemplo-norte1`, `192.0.2.10`).
 * Ninguna llave se escribe en un archivo del repositorio. Las claves de la práctica se crean en `$HOME/cd441-destino/`.
 * Sin imágenes, salvo el logotipo de *Cloudevel* de la portada (con su enlace). No hay texto dentro de imágenes.
-* Las celdas con etiqueta nunca se ejecutan en la CI. Cualquier celda nueva que use GCP, SSH o GHCR debe llevar `skip-execution`.
+* Las celdas con etiqueta nunca se ejecutan en la CI. Cualquier celda nueva que use GCP, SSH o GHCR debe llevar `skip-execution` y una fila en la tabla de celdas omitidas.
 
 ## Índice
 
@@ -179,7 +181,7 @@ Los ejercicios cuyo título termina en «(complemento)», y los de verificación
 | `17_solucion_linux_ssh.ipynb` | 45 | `skip-execution`, `requiere-ssh` | ssh y systemctl en el anfitrión Ubuntu |
 | `17_solucion_linux_ssh.ipynb` | 52 | `skip-execution`, `requiere-ssh` | gh secret delete y ssh contra el anfitrión |
 
-Estas filas están pensadas para unirse a la tabla de `docs/CI_CUADERNOS.md` de la rama `ci/cuadernos-16-17-2711`, que no existe en esta rama.
+Son 42 filas. Cualquier celda nueva que use GCP, SSH o GHCR debe llevar `skip-execution` y añadir aquí su fila.
 
 Las comprobaciones locales de los cuadernos 11, 14 y 15 instalan las dependencias de la *API* con `pip` y necesitan acceso a *PyPI*. El cuaderno 17 usa `ssh-keygen` (sin red) para ensayar la verificación de la huella; no se omite.
 
