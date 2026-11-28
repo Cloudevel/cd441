@@ -1,8 +1,11 @@
 # Ejecuta los cuadernos compatibles con un contenedor dentro del mismo
 # devcontainer que usan los estudiantes (Python 3.12, kernels de Python y Bash).
-# Es independiente de ci.yml (la CI de la API). Omite el 16 (Google Cloud con
-# Workload Identity Federation) y el 17 (Ubuntu 24.04 real), listados en
-# scripts/cuadernos_omitidos.txt.
+# Es independiente de ci.yml (la CI de la API). Ejecuta TODOS los cuadernos, el 16
+# y el 17 incluidos. No usa credenciales ni servicios externos: las celdas que
+# necesitan un proyecto de Google Cloud, GHCR o un anfitrión por SSH llevan la
+# etiqueta de celda «skip-execution» y el script las omite (y cuenta). Detalle en
+# docs/CI_CUADERNOS.md. scripts/cuadernos_omitidos.txt (hoy vacío) admite omitir
+# cuadernos enteros.
 name: Cuadernos
 
 on:

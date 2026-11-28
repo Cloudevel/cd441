@@ -1,3 +1,4 @@
-# Cuadernos que la CI de cuadernos no ejecuta.
-16_despliegue_en_cloud_run.ipynb  # necesita un proyecto de Google Cloud, Workload Identity Federation y credenciales
-17_despliegue_en_linux_por_ssh.ipynb  # el destino es un Ubuntu 24.04 completo con systemd y PostgreSQL
+# Cuadernos que la CI de cuadernos no ejecuta, uno por línea: «nombre.ipynb  # motivo».
+# Está vacía a propósito: todos los cuadernos se ejecutan. Las celdas que necesitan
+# servicios externos se omiten una a una con la etiqueta de celda «skip-execution»
+# (véase docs/CI_CUADERNOS.md).

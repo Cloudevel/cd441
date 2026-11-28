@@ -18,6 +18,10 @@ Uso:
 - Ningún cuaderno se guarda: las salidas solo se usan para el resumen.
 - Los cuadernos se ejecutan en una copia temporal del repositorio, para que los
   archivos de práctica que crean no ensucien el árbol de trabajo.
+- Por cuaderno se informa cuántas celdas de código se ejecutan y cuántas se
+  omiten con ``skip-execution``. Las celdas que necesitan un servicio externo
+  (proyecto de Google Cloud, GHCR, un anfitrión por SSH) llevan esa etiqueta;
+  véase ``docs/CI_CUADERNOS.md``.
 """
 
 from __future__ import annotations
@@ -67,11 +71,12 @@ def verificar_comandos(celda) -> None:
     celda.source = "\n".join(nuevas)
 
 
-def ejecutar(ruta: str, timeout: int) -> tuple[bool, str, int]:
+def ejecutar(ruta: str, timeout: int) -> tuple[bool, str, int, int]:
     nb = nbformat.read(ruta, as_version=4)
     antes = len(nb.cells)
     nb.cells = [c for c in nb.cells if ETIQUETA_OMITIR not in c.get("metadata", {}).get("tags", [])]
     celdas_omitidas = antes - len(nb.cells)
+    celdas_codigo = sum(1 for c in nb.cells if c.cell_type == "code")
     kernel = nb.metadata.get("kernelspec", {}).get("name", "python3")
     if nb.metadata.get("kernelspec", {}).get("language", "python") == "python":
         for celda in nb.cells:
@@ -87,8 +92,8 @@ def ejecutar(ruta: str, timeout: int) -> tuple[bool, str, int]:
     try:
         cliente.execute()
     except Exception as exc:  # noqa: BLE001
-        return False, f"{type(exc).__name__}: {str(exc)[-800:]}", celdas_omitidas
-    return True, "", celdas_omitidas
+        return False, f"{type(exc).__name__}: {str(exc)[-800:]}", celdas_omitidas, celdas_codigo
+    return True, "", celdas_omitidas, celdas_codigo
 
 
 def main() -> int:
@@ -115,9 +120,9 @@ def main() -> int:
             print(f"[OMITIDO] {nombre}: {omitidos[nombre]}", flush=True)
             continue
         inicio = time.monotonic()
-        ok, error, n_omit = ejecutar(os.path.join(copia, os.path.relpath(ruta, raiz)), args.timeout)
+        ok, error, n_omit, n_codigo = ejecutar(os.path.join(copia, os.path.relpath(ruta, raiz)), args.timeout)
         duracion = time.monotonic() - inicio
-        extra = f", {n_omit} celdas con {ETIQUETA_OMITIR}" if n_omit else ""
+        extra = f", {n_codigo} celdas de código ejecutadas, {n_omit} omitidas con {ETIQUETA_OMITIR}"
         if ok:
             pasan.append(nombre)
             print(f"[OK] {nombre} ({duracion:.1f} s{extra})", flush=True)
