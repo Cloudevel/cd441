@@ -33,6 +33,10 @@ La CI (rama `ci/soluciones-2711`, pendiente de publicar) ejecuta `soluciones/*.i
 * Sin imágenes, salvo el logotipo de *Cloudevel* de la portada (con su enlace). No hay texto dentro de imágenes.
 * Las celdas con etiqueta nunca se ejecutan en la CI. Cualquier celda nueva que use GCP, SSH o GHCR debe llevar `skip-execution` y una fila en la tabla de celdas omitidas.
 
+## El repositorio `demo-github-actions`
+
+`demo-github-actions` es un **repositorio de práctica que cada estudiante crea en su propia cuenta** (cuaderno 02). **No forma parte de cd441** y no se versiona aquí. Las soluciones de los cuadernos 02, 06, 07 y 10 lo clonan en la carpeta personal (`$HOME/demo-github-actions`), fuera de este repositorio. Para el cuaderno 10 debe ser **privado** (véase la tabla de propuestas).
+
 ## Índice
 
 | Solución | Cuaderno original | Enunciados | Ejercicios | Celdas omitidas por la CI |
