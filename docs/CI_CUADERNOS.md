@@ -1,6 +1,6 @@
 # CI de los cuadernos (`.github/workflows/notebooks.yml`)
 
-El workflow «Cuadernos» ejecuta **todos** los cuadernos `[0-9][0-9]_*.ipynb`, incluidos el 16 y el 17, dentro del mismo *devcontainer* que usan los estudiantes (Python 3.12, kernels de Python y Bash). Lo hace `scripts/ejecutar_cuadernos.py` con *nbclient*.
+El workflow «Cuadernos» ejecuta **todos** los cuadernos `[0-9][0-9]_*.ipynb` de la raíz, incluidos el 16 y el 17, y, **si existe** la carpeta `soluciones/`, también `soluciones/*.ipynb`. Si esa carpeta no está, el *job* termina bien con solo los de la raíz. Lo hace `scripts/ejecutar_cuadernos.py` con *nbclient*, dentro del mismo *devcontainer* que usan los estudiantes (Python 3.12, kernels de Python y Bash, y el binario `gitleaks`).
 
 ## Qué no puede hacer la CI
 
@@ -23,10 +23,14 @@ La CI **no tiene credenciales ni servicios externos**: ni proyecto de Google Clo
 
 Resultado en el *devcontainer*: cuaderno 16 → 0 celdas de código ejecutadas y 4 omitidas; cuaderno 17 → 1 celda de código ejecutada y 0 omitidas. Sin las etiquetas, el 16 falla en la celda 9 (falta `GCP_REGION`).
 
+## Soluciones (`soluciones/`)
+
+Cuando la carpeta está en el repositorio, la CI recorre también `soluciones/*.ipynb` con el mismo mecanismo (`skip-execution`). Las celdas de esos cuadernos que la CI no puede ejecutar (y el motivo: `requiere-nube`, `requiere-docker`, `requiere-ssh` o `requiere-gitleaks`) las documenta Experto docente en la tabla **«Qué no puede ejecutar la CI»** de `soluciones/README.md`. Esa tabla es la referencia; no se duplica aquí.
+
 ## Cómo añadir una celda que necesita un servicio externo
 
 1. Etiquétala con `skip-execution` (en Jupyter: *View → Cell Toolbar → Tags*, o `"metadata": {"tags": ["skip-execution"]}` en el JSON).
-2. Añade una fila a la tabla de arriba con el motivo.
+2. Añade una fila a la tabla de arriba (cuadernos de la raíz) o, si es una solución, a la de `soluciones/README.md`.
 3. Ejecuta localmente: `python scripts/ejecutar_cuadernos.py <cuaderno>.ipynb` dentro del *devcontainer*.
 
 La CI de la API (`ci.yml`) y los despliegues (`deploy-*.yml`) son independientes de este workflow. Las pruebas reales de esos despliegues están descritas en `docs/PRERREQUISITOS_PRUEBAS_EN_VIVO.md` y `docs/ESTADO_Y_PRUEBAS.md`.
